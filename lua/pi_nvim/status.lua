@@ -6,6 +6,7 @@ function M.label(panel)
     idle = 'Draft — type your request',
     running = 'Working…',
     proposed = 'Ready — awaiting your review',
+    answered = 'Answered — ask a follow-up',
     needs_clarification = 'Needs your input — reply in chat',
     rejected = 'Rejected — no change proposed',
     failed = 'Failed — open chat for details',

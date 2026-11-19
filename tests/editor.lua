@@ -110,12 +110,27 @@ assert(vim.fn.undotree().seq_cur == initial_undo, 'Preview changed undo history'
 local decorated = marks(source)
 assert(vim.iter(decorated):any(function(mark) return mark[4].virt_lines ~= nil end), 'Expected inline virtual diff lines')
 
--- Revise inside the same chat, keeping its transcript and buffer identity.
+-- Ask questions in this same chat without losing the unaccepted edit proposal.
 local chat_buf, count = chat.buf, #vim.api.nvim_list_bufs()
+choose(chat, 'Ask questions')
+assert(chat.mode == 'ask' and chat.buf == chat_buf)
+assert(vim.fn.maparg('<C-y>', 'n', false, true).desc ~= 'Pi: inline Apply')
+send('Why this change?')
+local answer = wait_panel(chat, first.id)
+assert(answer.mode == 'ask' and answer.status == 'answered' and not answer.after)
+assert(chat.proposal.id == first.id, 'Asking discarded the pending edit')
+assert(#vim.api.nvim_list_bufs() == count and vim.fn.undotree().seq_cur == initial_undo)
+assert(vim.api.nvim_buf_get_lines(source, 0, 1, false)[1] == 'prefix café suffix')
+choose(chat, 'Edit text')
+assert(chat.mode == 'edit' and chat.status == 'proposed')
+assert(vim.fn.maparg('<C-y>', 'n', false, true).desc ~= 'Pi: inline Apply', 'Chat buffer should not bind source acceptance')
+ui.hide(chat)
+assert(vim.fn.maparg('<C-y>', 'n', false, true).desc == 'Pi: inline Apply')
+-- Edit feedback keeps both the original proposal and intervening question in its thread.
 require('pi_nvim').open()
 send('Make it shorter')
-local revised = wait_panel(chat, first.id)
-assert(revised.parent == first.id and revised.after == 'prefix REVISED suffix\nSecond line\nLast unsaved\n')
+local revised = wait_panel(chat, answer.id)
+assert(revised.parent == answer.id and revised.after == 'prefix REVISED suffix\nSecond line\nLast unsaved\n')
 assert(chat.buf == chat_buf and #vim.api.nvim_list_bufs() == count)
 local transcript = table.concat(vim.api.nvim_buf_get_lines(chat.buf, 0, -1, false), '\n')
 assert(transcript:find('Improve selected text', 1, true) and transcript:find('Make it shorter', 1, true))
@@ -245,6 +260,24 @@ vim.api.nvim_buf_set_lines(source, 0, -1, false, { 'Changed buffer' })
 vim.api.nvim_exec_autocmds('TextChanged', { buffer = source })
 assert(#marks(source) == 0)
 vim.cmd 'edit!'
+
+-- Asking about a pending edit must not prevent later acceptance of that original edit.
+vim.cmd 'PiRun Explain before accepting'
+local discuss = ui.current()
+local candidate = wait_panel(discuss)
+choose(discuss, 'Ask questions')
+send('Explain this proposal')
+local explanation = wait_panel(discuss, candidate.id)
+assert(explanation.status == 'answered')
+choose(discuss, 'Edit text')
+ui.hide(discuss)
+feed('<C-y>')
+assert(vim.wait(5000, function() return discuss.status == 'accepted' end))
+assert(discuss.proposal.id == candidate.id and discuss.proposal.status == 'accepted')
+assert(discuss.run.id == explanation.id, 'Acceptance lost the intervening question')
+assert(vim.fn.readfile(file)[1] == '# Fresh source')
+feed('u')
+assert(vim.api.nvim_buf_get_lines(source, 0, 1, false)[1] == '# Fresh source')
 
 -- A newly named, unsaved buffer can request and accept without creating a disk file.
 local new_file = file .. '.new.md'

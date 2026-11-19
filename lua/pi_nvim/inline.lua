@@ -27,15 +27,15 @@ local function restore_keys(buf)
     end
   end
 end
-local function install_keys(panel)
+local function install_keys(panel, run)
   local buf, saved = panel.origin.buf, {}
   state.inline_keys[buf] = saved
   for key, action in pairs(bindings) do
     local old, desc = mapping(buf, key), 'Pi: inline ' .. action
     saved[key] = { original = old.buffer == 1 and old or nil, desc = desc }
     vim.keymap.set('n', key, function()
-      if state.source_panel[buf] ~= panel or panel.status ~= 'proposed' or panel.dismissed
-        or text(buf) ~= panel.run.before then return M.clear(buf) end
+      if state.source_panel[buf] ~= panel or panel.mode == 'ask' or panel.status ~= 'proposed' or panel.dismissed
+        or text(buf) ~= run.before then return M.clear(buf) end
       if state.handlers and state.handlers.action then state.handlers.action(panel, action) end
     end, { buffer = buf, desc = desc, silent = true })
   end
@@ -48,7 +48,8 @@ function M.clear(buf)
 end
 
 function M.show(panel)
-  local buf, run = panel.origin.buf, panel.run
+  local buf = panel.origin.buf
+  local run = panel.mode == 'ask' and panel.run or (panel.proposal or panel.run)
   if not buf or not vim.api.nvim_buf_is_loaded(buf) then return end
   M.clear(buf)
   if panel.dismissed then return end
@@ -61,9 +62,9 @@ function M.show(panel)
     })
     return
   end
-  if not run or run.status ~= 'proposed' then return end
+  if panel.mode == 'ask' or panel.status ~= 'proposed' or not run or run.status ~= 'proposed' then return end
   if vim.bo[buf].fileformat ~= 'unix' or vim.bo[buf].bomb or text(buf) ~= run.before then return end
-  install_keys(panel)
+  install_keys(panel, run)
   local ready_row = math.max(0, math.min(panel.origin.row, vim.api.nvim_buf_line_count(buf) - 1))
   vim.api.nvim_buf_set_extmark(buf, namespace, ready_row, 0, {
     virt_text = { { run.before == run.after and ' Pi: Ready — no text changes · Ctrl-N dismiss'
@@ -102,7 +103,8 @@ vim.api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI', 'BufWritePost', 'Bu
   group = group, callback = function(event)
     M.clear(event.buf)
     local panel = state.source_panel[event.buf]
-    if panel and panel.run and panel.status == 'proposed' then panel.stale = text(event.buf) ~= panel.run.before end
+    local candidate = panel and (panel.proposal or panel.run)
+    if panel and candidate and panel.mode ~= 'ask' and panel.status == 'proposed' then panel.stale = text(event.buf) ~= candidate.before end
   end,
 })
 return M

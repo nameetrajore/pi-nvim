@@ -197,6 +197,54 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             runner.target(self.root, file, 'markdown')
 
+    def test_ask_mode_answers_without_a_proposal_and_keeps_edit_context(self):
+        first = self.propose()
+        disk = self.file.read_bytes()
+        answer = dict(status='answered', reason='Explanation', answer='A sends work to B.')
+        with patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(answer), '')) as proc:
+            question = runner.request(self.args(mode='ask', parent=first['id'], instruction='Why A to B?'))
+        self.assertEqual(question['status'], 'answered')
+        self.assertEqual(question['answer'], answer['answer'])
+        self.assertNotIn('after', question)
+        self.assertEqual(self.file.read_bytes(), disk)
+        payload = json.loads(proc.call_args.kwargs['input'])
+        self.assertEqual(payload['last_proposal']['content'], first['after'])
+        self.assertIn(runner.ASK_SYSTEM, proc.call_args.args[0])
+        with self.assertRaises(ValueError):
+            runner.accept_buffer(question['id'])
+        edited = dict(status='proposed', reason='Revision', content='# Revised\n')
+        with patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(edited), '')) as proc:
+            revised = runner.request(self.args(parent=question['id'], instruction='Use shorter names'), first)
+        self.assertEqual(revised['parent'], question['id'])
+        conversation = json.loads(proc.call_args.kwargs['input'])['conversation']
+        self.assertEqual(conversation[-1]['answer'], answer['answer'])
+        self.assertEqual(self.file.read_bytes(), disk)
+
+    def test_ask_mode_can_explain_non_markdown_text(self):
+        code = self.root / 'sample.py'
+        code.write_text('def add(a, b):\n    return a + b\n')
+        answer = dict(status='answered', reason='Code explanation', answer='It adds two values.')
+        with patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(answer), '')):
+            run = runner.request(self.args(file=str(code), mode='ask'))
+        self.assertEqual(run['status'], 'answered')
+        self.assertNotIn('after', run)
+        self.assertEqual(code.read_text(), 'def add(a, b):\n    return a + b\n')
+        with self.assertRaises(ValueError):
+            runner.target(self.root, code, 'markdown')
+
+    def test_ask_mode_rejects_edit_output_and_auto_apply(self):
+        disk = self.file.read_bytes()
+        malformed = dict(status='proposed', reason='Wrong mode', content='Overwrite everything')
+        with patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(malformed), '')):
+            run = runner.request(self.args(mode='ask'))
+        self.assertEqual(run['status'], 'failed')
+        self.assertNotIn('after', run)
+        with patch.object(runner.subprocess, 'run') as proc:
+            blocked = runner.request(self.args(mode='ask', apply=True))
+        self.assertEqual(blocked['status'], 'failed')
+        proc.assert_not_called()
+        self.assertEqual(self.file.read_bytes(), disk)
+
     def test_validation(self):
         with self.assertRaisesRegex(ValueError, 'Unclosed'):
             runner.validate('```mermaid\nflowchart LR\n', 'markdown')
