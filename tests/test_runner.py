@@ -220,6 +220,28 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(conversation[-1]['answer'], answer['answer'])
         self.assertEqual(self.file.read_bytes(), disk)
 
+    def test_auto_chat_answers_proposes_and_restricts_unsupported_edits(self):
+        answer = dict(status='answered', reason='Answer', answer='It adds values.')
+        with patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(answer), '')):
+            run = runner.request(self.args(mode='auto'))
+        self.assertEqual(run['status'], 'answered')
+        self.assertNotIn('after', run)
+        proposal = dict(status='proposed', reason='Edit', content='# Updated\n')
+        with patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(proposal), '')):
+            edit = runner.request(self.args(mode='auto'))
+        self.assertEqual(edit['status'], 'proposed')
+        code = self.root / 'sample.py'
+        code.write_text('print(1)\n')
+        with patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(proposal), '')):
+            refused = runner.request(self.args(mode='auto', file=str(code)))
+        self.assertEqual(refused['status'], 'failed')
+        self.assertNotIn('after', refused)
+        self.assertEqual(code.read_text(), 'print(1)\n')
+        with patch.object(runner.subprocess, 'run') as proc:
+            blocked = runner.request(self.args(mode='auto', apply=True))
+        self.assertEqual(blocked['status'], 'failed')
+        proc.assert_not_called()
+
     def test_ask_mode_can_explain_non_markdown_text(self):
         code = self.root / 'sample.py'
         code.write_text('def add(a, b):\n    return a + b\n')

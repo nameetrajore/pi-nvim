@@ -35,7 +35,7 @@ if request['instruction'].startswith('Fail'):
 if request['instruction'].startswith('Clarify'):
     print(json.dumps(dict(status='needs_clarification', reason='Which output format?')))
     sys.exit(0)
-if request.get('mode') == 'ask':
+if request.get('mode') == 'ask' or (request.get('mode') == 'auto' and request['instruction'].endswith('?')):
     print(json.dumps(dict(status='answered', reason='Explanation', answer='This explains the selected text without changing it.')))
     sys.exit(0)
 replacement = 'REVISED' if request.get('previous') else 'EDITED'

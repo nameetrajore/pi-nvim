@@ -49,7 +49,7 @@ local function position(panel)
   return { relative = 'editor', row = math.max(0, math.min(row, vim.o.lines - height - vim.o.cmdheight - 3)),
     col = math.max(0, math.min(col, vim.o.columns - width - 2)), width = width, height = height,
     style = 'minimal', border = 'rounded', focusable = true, zindex = 50,
-    title = ' Pi · ' .. (panel.mode == 'ask' and 'Ask' or 'Edit') .. ' · ' .. status.label(panel) .. ' ', title_pos = 'left' }
+    title = ' Pi · ' .. status.label(panel) .. ' ', title_pos = 'left' }
 end
 
 function M.hide(panel)
@@ -62,9 +62,8 @@ end
 
 function M.actions(panel)
   local choices = {}
-  if panel.mode ~= 'ask' and panel.status == 'proposed' then choices[#choices + 1] = 'Apply' end
-  if panel.mode ~= 'ask' and panel.status == 'proposed' and not panel.dismissed then choices[#choices + 1] = 'Dismiss preview' end
-  choices[#choices + 1] = panel.mode == 'ask' and 'Edit text' or 'Ask questions'
+  if panel.status == 'proposed' then choices[#choices + 1] = 'Apply' end
+  if panel.status == 'proposed' and not panel.dismissed then choices[#choices + 1] = 'Dismiss preview' end
   vim.list_extend(choices, { 'New request', 'Requests', 'History', 'Copy Pi session command' })
   vim.ui.select(choices, { prompt = 'Pi actions' }, function(choice)
     if choice and state.handlers and state.handlers.action then state.handlers.action(panel, choice) end
@@ -146,20 +145,8 @@ function M.input(panel)
   vim.cmd 'startinsert!'
 end
 
-function M.set_mode(panel, mode)
-  panel.mode, panel.stale = mode, false
-  local current
-  if mode == 'ask' then
-    if panel.run and panel.run.mode == 'ask' then current = panel.run end
-  else current = panel.proposal end
-  panel.status = current and current.status or 'idle'
-  panel.dismissed = mode ~= 'ask' and panel.proposal and panel.dismissed_proposal == panel.proposal.id or false
-  M.message(panel, mode == 'ask' and 'Ask mode: answers only, no edits.' or 'Edit mode: proposals require acceptance.')
-  M.input(panel)
-end
-
 function M.new(origin, instruction)
-  local panel = { origin = vim.tbl_extend('force', {}, origin), instruction = instruction or '', mode = 'edit', status = 'idle', messages = {} }
+  local panel = { origin = vim.tbl_extend('force', {}, origin), instruction = instruction or '', status = 'idle', messages = {} }
   prepare_buffer(panel)
   if origin.buf and vim.api.nvim_buf_is_loaded(origin.buf) then
     local row = math.min(origin.row, vim.api.nvim_buf_line_count(origin.buf) - 1)
@@ -179,12 +166,11 @@ function M.begin(panel, instruction, echoed)
 end
 
 function M.update(panel, run)
-  if run.mode ~= 'ask' then
-    panel.proposal = (run.status == 'proposed' or run.status == 'accepted') and run or nil
-  end
+  if run.status == 'proposed' or run.status == 'accepted' then panel.proposal = run end
   if not (run.status == 'accepted' and panel.run and panel.run.id ~= run.id) then panel.run = run end
   panel.status, panel.stale = run.status, false
-  panel.dismissed = panel.mode ~= 'ask' and panel.proposal and panel.dismissed_proposal == panel.proposal.id or false
+  if run.status == 'answered' and panel.proposal and panel.proposal.status == 'proposed' then panel.status = 'proposed' end
+  panel.dismissed = panel.proposal and panel.dismissed_proposal == panel.proposal.id or false
   by_id[run.id] = panel
   if source_panel[panel.origin.buf] == panel then inline.show(panel) end
   M.message(panel, 'Pi [' .. status.label({ status = run.status }) .. ']: ' .. (run.answer or run.reason or '') ..
@@ -206,13 +192,13 @@ function M.show(run, history)
   local panel = by_id[run.id]
   if not panel or not panel.run or panel.run.id ~= run.id then
     panel = M.new(M.origin(run), run.instruction)
-    panel.mode = run.mode or 'edit'
     for _, entry in ipairs(history or { run }) do
       if entry.mode ~= 'ask' and (entry.status == 'proposed' or entry.status == 'accepted') then panel.proposal = entry end
       M.message(panel, 'You: ' .. entry.instruction)
       M.message(panel, 'Pi [' .. status.label({ status = entry.status }) .. ']: ' .. (entry.answer or entry.reason or ''))
     end
     panel.run, panel.status = run, run.status
+    if run.status == 'answered' and panel.proposal and panel.proposal.status == 'proposed' then panel.status = 'proposed' end
     by_id[run.id] = panel
   end
   M.present(panel, true)
@@ -222,13 +208,13 @@ function M.select()
   local items = {}
   for i = #panels, 1, -1 do items[#items + 1] = panels[i] end
   vim.ui.select(items, { prompt = 'Pi requests', format_item = function(panel)
-    return '[' .. (panel.mode == 'ask' and 'Ask' or 'Edit') .. ' · ' .. status.label(panel) .. '] ' .. (panel.instruction ~= '' and panel.instruction or 'New request')
+    return '[' .. status.label(panel) .. '] ' .. (panel.instruction ~= '' and panel.instruction or 'New request')
   end }, function(panel) if panel then M.input(panel) end end)
 end
 
 function M.refresh_all()
   for _, panel in ipairs(panels) do
-    panel.mode = panel.mode or 'edit'
+    panel.mode = nil
     if not panel.proposal and panel.run and panel.run.mode ~= 'ask' then panel.proposal = panel.run end
     if source_panel[panel.origin.buf] == panel then inline.show(panel) end
     refresh(panel)

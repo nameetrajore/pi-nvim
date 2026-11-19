@@ -26,22 +26,14 @@ config, downloads plugins, connects to Pi, or installs credentials.
 For chezmoi, import those installed files and the launcher with `chezmoi add`.
 Do not import Pi credentials, run history, or private handoff snapshots.
 
-## Ask or Edit in the same chat
+## Questions and edits in one chat
 
-The floating title shows **Ask** or **Edit**. Open **Actions** with Esc, then
-Normal-mode Enter, and choose **Ask questions** or **Edit text**. No extra window
-or shortcut is needed.
-
-- **Ask** answers questions about the current buffer/selection. Answers appear in
-  this chat and are saved in the conversation. It cannot return an editable proposal
-  or apply anything; inline acceptance keys are disabled in this mode. It supports
-  any named UTF-8 text buffer, not only Markdown.
-- **Edit** proposes changes for review, retaining the existing native-undo workflow.
-  Supported edits are Markdown and Neovim Lua configuration (`:PiConfig`).
-
-You can ask about a pending edit without losing it. Switching back to Edit restores
-its preview if the source still matches. Feedback can then refine it, or you can
-accept it. Questions and edits share the same conversation and session handoff.
+Ask a question or request an edit in the same floating chat. Pi decides whether to
+answer or propose changes; ambiguous requests should prompt clarification. A model can
+misread intent, so check its response. Proposals never apply automatically and always
+require your explicit acceptance. Questions can reference a pending proposal without
+discarding it. Questions support named UTF-8 text buffers; edits support Markdown and
+Neovim Lua configuration (`:PiConfig`).
 
 ## Editor workflow
 
@@ -55,8 +47,7 @@ accept it. Questions and edits share the same conversation and session handoff.
    The same chat retains previous messages; each revision is a linked history run.
 5. **Esc**, then **Enter** in Normal mode opens selectable actions:
    **Apply**, **Dismiss preview**, **New request**, **Requests**, **History**, and
-   **Copy Pi session command**, plus the **Ask questions / Edit text** mode switch.
-   Revision is just another Edit-mode chat message, not a button.
+   **Copy Pi session command**. Revision is just another chat message, not a button.
 
 Apply edits the existing source buffer as **one separate native undo step**, clears
 the preview, and hides the chat. It does not write the file, reload it, or open a
@@ -66,7 +57,7 @@ and buffers with undo disabled are not changed. Final-newline/encoding options a
 preserved rather than changed outside the undo tree. There is no editor Rollback.
 Dismiss only removes the preview; history stays intact. Normal-mode `q` hides chat without
 cancelling a request. Ordinary `i`/`a`, navigation, and yanking work in chat.
-While a valid inline proposal is selected in Edit mode, **Normal-mode Ctrl-Y accepts** and
+While a valid inline proposal is selected, **Normal-mode Ctrl-Y accepts** and
 **Ctrl-N dismisses**. These are temporary buffer-local bindings: existing mappings
 are restored when the preview is cleared. Insert-mode completion keys and Harpoon's
 Ctrl-E are untouched. There are no new global action shortcuts. The older plugin-owned
@@ -94,7 +85,7 @@ The floating title, request picker, and source annotation distinguish:
 
 - **Working…**: Pi is still processing; nothing is ready to accept yet.
 - **Ready — awaiting your review**: processing finished; accept, dismiss, or chat.
-- **Answered — ask a follow-up**: Ask-mode processing finished; read the chat answer.
+- **Answered — ask a follow-up**: read the answer in chat.
 - **Needs your input — reply in chat**: Pi finished but needs clarification.
 - **Rejected** / **Failed**: no usable proposal; open chat for the reason.
 - **Accepted in buffer**: text was accepted, not automatically saved.
@@ -164,7 +155,7 @@ pi-nvim delete RUN_ID
 
 All commands emit JSON. `run` is proposal-only unless `--apply` is explicitly used
 (Markdown only; config never auto-applies). Options: `--model`, `--timeout 180`,
-`--kind config`, `--mode edit|ask`, `--parent RUN_ID`. Ask responses never create
+`--kind config`, `--mode edit|ask|auto`, `--parent RUN_ID`. Ask responses never create
 an applicable replacement and cannot be combined with auto-apply.
 `--start-byte N --end-byte M` defines a zero-based,
 end-exclusive UTF-8 selection; `--expected-sha256 HASH` checks its source snapshot.

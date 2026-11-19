@@ -40,7 +40,7 @@ local function selected_id(explicit)
   if explicit and explicit ~= '' then return explicit end
   local panel = ui.current()
   if panel then
-    local candidate = panel.mode ~= 'ask' and panel.proposal or panel.run
+    local candidate = panel.proposal or panel.run
     return panel.status ~= 'running' and candidate and candidate.id or nil
   end
   return vim.b.pi_run_id or last_run
@@ -78,27 +78,23 @@ local function submit(panel, instruction, echoed)
   if not buf or not vim.api.nvim_buf_is_loaded(buf) or not buffer.supported(buf) then
     return ui.message(panel, 'Open the UTF-8/Unix source buffer before sending.')
   end
-  local snapshot, mode = buffer.text(buf), panel.mode or 'edit'
+  local snapshot = buffer.text(buf)
   local file = run and run.file or (data and data.file)
   local name = vim.api.nvim_buf_get_name(buf)
   if not file or (vim.fs.normalize(name) ~= file and vim.uv.fs_realpath(name) ~= file) then
     return ui.message(panel, 'Source buffer was renamed. Start a new request.')
   end
   local candidate = panel.proposal or (run and run.mode ~= 'ask' and run or nil)
-  if mode == 'edit' and candidate and (candidate.status == 'proposed' or candidate.status == 'rejected'
+  if candidate and snapshot == candidate.before and (candidate.status == 'proposed' or candidate.status == 'rejected'
     or candidate.status == 'needs_clarification' or candidate.status == 'failed') then
-    if snapshot ~= candidate.before then return ui.message(panel, 'Source changed since this proposal. Start a new request.') end
-    local args = { 'revise', candidate.id, instruction, '--source-stdin' }
+    local args = { 'revise', candidate.id, instruction, '--mode', 'auto', '--source-stdin' }
     if run then vim.list_extend(args, { '--parent', run.id }) end
     return launch(args, panel, instruction, echoed, snapshot)
-  end
-  if not run and mode == 'edit' and (not data or snapshot ~= data.snapshot) then
-    return ui.message(panel, 'Source changed since this chat was opened. Start a new request and select again.')
   end
   local root, kind = run and run.workspace or data.root, run and run.kind or data.kind
   local scope = data and snapshot == data.snapshot and data.scope or nil
   if candidate and (candidate.status == 'accepted' or candidate.status == 'applied' or candidate.status == 'rolled_back') then scope = nil end
-  local args = { 'run', file, instruction, '--workspace', root, '--kind', kind, '--mode', mode, '--source-stdin' }
+  local args = { 'run', file, instruction, '--workspace', root, '--kind', kind, '--mode', 'auto', '--source-stdin' }
   if run then vim.list_extend(args, { '--parent', run.id }) end
   if scope then
     vim.list_extend(args, { '--start-byte', tostring(scope.start), '--end-byte', tostring(scope.finish), '--expected-sha256', vim.fn.sha256(snapshot) })
@@ -200,10 +196,6 @@ end
 function M.setup(opts)
   options = vim.tbl_extend('force', options, opts or {})
   ui.configure({ submit = submit, action = function(panel, choice)
-    if choice == 'Ask questions' or choice == 'Edit text' then
-      if jobs[panel] then return ui.message(panel, 'Pi is still working. Switch modes after it finishes.') end
-      return ui.set_mode(panel, choice == 'Ask questions' and 'ask' or 'edit')
-    end
     if choice == 'Dismiss preview' then return ui.dismiss(panel) end
     if choice == 'Requests' then return ui.select() end
     if choice == 'History' then return vim.cmd 'PiHistory' end
@@ -219,7 +211,7 @@ function M.setup(opts)
       return notify 'Open the source file, then use :PiRun'
     end
     if not panel.run or panel.status == 'running' then return ui.message(panel, 'Wait for this request to finish first.') end
-    if choice == 'Apply' and panel.mode ~= 'ask' then
+    if choice == 'Apply' then
       local candidate = panel.proposal or panel.run
       if candidate then apply(candidate.id) end
     end
