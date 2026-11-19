@@ -1,0 +1,2 @@
+#!/bin/sh
+exec python3 "${XDG_CONFIG_HOME:-$HOME/.config}/${NVIM_APPNAME:-nvim}/scripts/pi_nvim.py" "$@"
