@@ -46,6 +46,17 @@ class RunnerTests(unittest.TestCase):
         self.assertNotIn('mermaid', self.file.read_text())
         return run
 
+    def test_writing_style_is_included_when_configured(self):
+        response = dict(status='answered', reason='Answer ready', answer='A short answer.')
+        with patch.dict(os.environ, {'PI_NVIM_WRITING_STYLE': 'Use short, clear sentences.'}), \
+             patch.object(runner.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, json.dumps(response), '')) as proc:
+            runner.request(self.args(mode='auto'))
+        payload = json.loads(proc.call_args.kwargs['input'])
+        self.assertEqual(payload['writing_style'], 'Use short, clear sentences.')
+        command = proc.call_args.args[0]
+        self.assertIn('current instruction', command[command.index('--system-prompt') + 1])
+        self.assertIn('--no-tools', command)
+
     def test_propose_apply_rollback(self):
         run = self.propose()
         self.assertEqual(run['status'], 'proposed')

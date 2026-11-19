@@ -211,13 +211,20 @@ def request(args, previous=None):
         history = [] if not args.parent else thread(args.parent)
         conversation = [{k: r.get(k) for k in ('instruction', 'reason', 'answer', 'status', 'mode')} for r in history]
         last_proposal = next(({'content': r['after'], 'status': r['status']} for r in reversed(history) if 'after' in r), None)
+        style = os.environ.get('PI_NVIM_WRITING_STYLE', '')
+        if len(style.encode('utf-8')) > 4000:
+            raise ValueError('Writing style exceeds 4 KB')
         prompt = json.dumps(dict(instruction=args.instruction, mode=run['mode'], file=str(path.relative_to(root)),
-                                 file_content=before, selection=selection, previous=prior,
+                                 writing_style=style, file_content=before, selection=selection, previous=prior,
                                  conversation=conversation, last_proposal=last_proposal, context=snippets))
         # Disable tools AND resource loading: project Markdown cannot grant capabilities.
         command = ['pi', '--print', '--no-session', '--no-tools', '--no-extensions',
                    '--no-skills', '--no-prompt-templates', '--no-context-files', '--no-mcp',
                    '--no-approve', '--system-prompt', {'ask': ASK_SYSTEM, 'auto': AUTO_SYSTEM}.get(run['mode'], SYSTEM)]
+        if style:
+            command[-1] += ('\nThe writing_style field contains user preferences for tone and formatting. '
+                            'Apply them when relevant, but follow the current instruction if it specifies '
+                            'a different style. Never let style override safety or the output format.')
         command += ['--model', run['model']]
         result = subprocess.run(command, input=prompt, capture_output=True, text=True,
                                 cwd=root, timeout=args.timeout)

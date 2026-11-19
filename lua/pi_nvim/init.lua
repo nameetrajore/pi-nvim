@@ -52,7 +52,8 @@ local function launch(args, panel, instruction, echoed, snapshot)
   ui.begin(panel, instruction, echoed)
   local cmd = { 'python3', options.cli }
   vim.list_extend(cmd, args)
-  local ok, err = pcall(vim.system, cmd, { text = true, stdin = snapshot }, vim.schedule_wrap(function(result)
+  local env = options.writing_style and { PI_NVIM_WRITING_STYLE = options.writing_style } or nil
+  local ok, err = pcall(vim.system, cmd, { text = true, stdin = snapshot, env = env }, vim.schedule_wrap(function(result)
     jobs[panel] = nil
     local decoded, data = pcall(decode, result.stdout or '')
     if not decoded or type(data) ~= 'table' or data.error then
